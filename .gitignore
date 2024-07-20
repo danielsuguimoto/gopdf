@@ -1,0 +1,15 @@
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+tmp/
+# Go workspace file
+go.work
+go.work.sum
+
+# env file
+.env
