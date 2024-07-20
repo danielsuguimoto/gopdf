@@ -19,48 +19,65 @@ func main() {
 	app := fiber.New()
 	app.Get("/from-url", handleFromUrl)
 	app.Post("/from-html", handleFromHtml)
-	app.Listen(":3000")
+	if err := app.Listen(":3000"); err != nil {
+		log.Fatal(err)
+	}
 }
 
-func handleFromUrl(c *fiber.Ctx) error {
+func handleFromUrl(c *fiber.Ctx) (err error) {
 	url := c.Query("url")
 
 	if len(url) == 0 {
 		return c.Status(400).JSON(map[string]string{"msg": "missing parameter: url"})
 	}
 
-	ctx, cancel := chromedp.NewContext(context.Background())
-	defer cancel()
-
 	var buf []byte
-	if err := chromedp.Run(ctx, printUrlToPDF(url, &buf)); err != nil {
-		log.Fatal(err)
+	if buf, err = createPdfBufferFromUrl(url); err != nil {
+		return err
 	}
 
 	return deliverPdfFile(buf, c)
 }
 
-func handleFromHtml(c *fiber.Ctx) error {
+func handleFromHtml(c *fiber.Ctx) (err error) {
 	r := new(FromHtmlRequest)
-	if err := c.BodyParser(r); err != nil {
+	if err = c.BodyParser(r); err != nil {
 		return err
 	}
 
 	html := r.Html
 
-	filepath := uuid.NewString() + ".html"
+	filepath := "/tmp/" + uuid.NewString() + ".html"
 
-	if err := saveHtmlFile(filepath, html); err != nil {
+	if err = saveHtmlFile(filepath, html); err != nil {
 		return err
 	}
 
 	defer os.Remove(filepath)
 
-	return c.Status(200).SendFile(filepath, true)
+	var buf []byte
+
+	if buf, err = createPdfBufferFromUrl("file://" + filepath); err != nil {
+		return err
+	}
+
+	return deliverPdfFile(buf, c)
+}
+
+func createPdfBufferFromUrl(url string) ([]byte, error) {
+	ctx, cancel := chromedp.NewContext(context.Background())
+	defer cancel()
+
+	var buf []byte
+	if err := chromedp.Run(ctx, printUrlToPDF(url, &buf)); err != nil {
+		return nil, err
+	}
+
+	return buf, nil
 }
 
 func deliverPdfFile(res []byte, c *fiber.Ctx) error {
-	fileName := uuid.New().String() + ".pdf"
+	fileName := "/tmp/" + uuid.New().String() + ".pdf"
 	newFile, err := os.Create(fileName)
 
 	if err != nil {
@@ -68,9 +85,11 @@ func deliverPdfFile(res []byte, c *fiber.Ctx) error {
 	}
 
 	defer newFile.Close()
-	newFile.Write(res)
-
 	defer os.Remove(fileName)
+
+	if _, err = newFile.Write(res); err != nil {
+		return err
+	}
 
 	return c.Status(200).SendFile(fileName, true)
 }
@@ -83,7 +102,9 @@ func saveHtmlFile(filepath string, html string) error {
 	}
 
 	defer newFile.Close()
-	newFile.WriteString(html)
+	if _, err = newFile.WriteString(html); err != nil {
+		return err
+	}
 	return nil
 }
 
