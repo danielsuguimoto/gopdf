@@ -11,8 +11,9 @@ import (
 	"github.com/google/uuid"
 )
 
-type FromHtmlRequest struct {
-	Html string `json:"html"`
+type HtmlRequest struct {
+	Html     string `json:"html"`
+	Compress bool   `json:"compress"`
 }
 
 func main() {
@@ -26,6 +27,7 @@ func main() {
 
 func handleFromUrl(c *fiber.Ctx) (err error) {
 	url := c.Query("url")
+	compress := c.QueryBool("compress")
 
 	if len(url) == 0 {
 		return c.Status(400).JSON(map[string]string{"msg": "missing parameter: url"})
@@ -36,11 +38,11 @@ func handleFromUrl(c *fiber.Ctx) (err error) {
 		return err
 	}
 
-	return deliverPdfFile(buf, c)
+	return deliverPdfFile(buf, compress, c)
 }
 
 func handleFromHtml(c *fiber.Ctx) (err error) {
-	r := new(FromHtmlRequest)
+	r := new(HtmlRequest)
 	if err = c.BodyParser(r); err != nil {
 		return err
 	}
@@ -61,7 +63,7 @@ func handleFromHtml(c *fiber.Ctx) (err error) {
 		return err
 	}
 
-	return deliverPdfFile(buf, c)
+	return deliverPdfFile(buf, r.Compress, c)
 }
 
 func createPdfBufferFromUrl(url string) ([]byte, error) {
@@ -76,7 +78,7 @@ func createPdfBufferFromUrl(url string) ([]byte, error) {
 	return buf, nil
 }
 
-func deliverPdfFile(res []byte, c *fiber.Ctx) error {
+func deliverPdfFile(res []byte, compress bool, c *fiber.Ctx) error {
 	fileName := "/tmp/" + uuid.New().String() + ".pdf"
 	newFile, err := os.Create(fileName)
 
@@ -91,7 +93,7 @@ func deliverPdfFile(res []byte, c *fiber.Ctx) error {
 		return err
 	}
 
-	return c.Status(200).SendFile(fileName, true)
+	return c.Status(200).SendFile(fileName, compress)
 }
 
 func saveHtmlFile(filepath string, html string) error {
